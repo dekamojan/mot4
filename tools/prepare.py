@@ -174,6 +174,10 @@ for s in scenes:
         sfx += [dict(t=round(q + 4 / FPS, 3), type='ticks', d=1.2, step=.08, gain=.5),
                 dict(t=round(q + 40 / FPS, 3), type='thud', gain=.7), dict(t=round(q + 40 / FPS, 3), type='bell', f=1318, gain=.4)]
     if s.get('prop') == 'confetti': sfx += [dict(t=round(s['start'] + .1, 3), type='impact', gain=.4), dict(t=round(s['start'] + .2, 3), type='sparkle')]
+    pq = s['start'] if EXPLAINER else q                                              # Explainer: animasi prop mulai di awal adegan; gaya lama: awal Sequence
+    if s.get('prop') == 'rocket': sfx.append(dict(t=round(pq + .05, 3), type='rise', d=.6, f0=200, f1=1400, gain=.7))
+    if s.get('prop') == 'chart': sfx.append(dict(t=round(pq + .1, 3), type='ticks', d=.8, step=.1, gain=.4))
+    if s.get('prop') == 'lock': sfx.append(dict(t=round(pq + .65, 3), type='thud', gain=.5))      # gembok mengunci
 if EXPLAINER and USE_BLOCKSFX:                                                       # bunyi kecil saat tiap blok visual muncul
     for si, s in enumerate(scenes):
         ws_s = [w for w in words if w['s'] == si]
@@ -184,7 +188,27 @@ if EXPLAINER and USE_BLOCKSFX:                                                  
             elif isinstance(at, str):
                 kk = norm(at); h = next((w for w in ws_s if kk and norm(w['w']).startswith(kk)), None)
                 if h: t0 = h['a']
+            t0 = min(t0, s['start'] + .45)                                           # Explainer.tsx membatasi kemunculan blok maks 0.45 dtk dari awal adegan
             sfx.append(dict(t=round(t0, 3), type='plink' if b.get('type') in ('stat', 'callout') else 'pop', gain=.35))
+            ty = b.get('type')                                                       # isi blok yang muncul bertahap (waktu sama dengan Explainer.tsx)
+            if ty == 'terminal':                                                     # ketikan perintah + tanda centang hasil
+                cur = t0 + .4
+                for l in (b.get('lines') or [])[:8]:
+                    txt = str(l.get('text', '')); kind = l.get('k') or ('cmd' if txt.strip().startswith('$') else 'out')
+                    d = min(1.6, max(.4, len(txt) / 40)) if kind == 'cmd' else .2
+                    if kind == 'cmd': sfx.append(dict(t=round(cur, 3), type='ticks', d=round(d, 2), step=.06, gain=.25))
+                    if kind == 'ok': sfx.append(dict(t=round(cur, 3), type='plink', gain=.25))
+                    cur += d + (.3 if kind == 'cmd' else .15)
+            elif ty == 'phone':
+                for ri in range(len((b.get('rows') or [])[:6])): sfx.append(dict(t=round(t0 + .5 + ri * .7, 3), type='pop', gain=.25))
+            elif ty == 'tiles':
+                for ci in range(1, len((b.get('cols') or [])[:4])): sfx.append(dict(t=round(t0 + ci * .3, 3), type='pop', gain=.25))
+            elif ty == 'notifs':
+                for ni in range(1, len((b.get('notifs') or [])[:4])): sfx.append(dict(t=round(t0 + ni * .55, 3), type='plink', gain=.3))
+            elif ty == 'icons':
+                for ii in range(1, len((b.get('icons') or [])[:3])): sfx.append(dict(t=round(t0 + ii * .35, 3), type='pop', gain=.3))
+            elif ty == 'kpi' and b.get('value'):                                     # angka naik
+                sfx += [dict(t=round(t0 + .2, 3), type='ticks', d=1.3, step=.08, gain=.35), dict(t=round(t0 + 1.5, 3), type='bell', f=1318, gain=.25)]
 if HUD:                                                                              # paket suara HUD: bip elektronik tiap label diketik + blip transisi
     for si, s in enumerate(scenes):
         sfx.append(dict(t=round(s['start'] + .1, 3), type='ticks', d=.55, step=.05, gain=.22))
