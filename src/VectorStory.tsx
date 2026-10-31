@@ -16,7 +16,7 @@ const FPS = 30;
 const XF = 10; // frame overlap transisi antar adegan
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
-type Pose = "idle" | "point" | "shock" | "sad" | "cheer" | "wave" | "walk" | "tremble" | "think";
+type Pose = "idle" | "point" | "shock" | "sad" | "cheer" | "wave" | "walk" | "tremble" | "think" | "explain" | "thumbs";
 type Card = { type: "list" | "stat" | "bars" | "tool"; title?: string; items?: string[]; value?: string; label?: string; name?: string; tagline?: string; cta?: string };
 type Char = { type?: string; x: number; pose: Pose; enter?: "left" | "right"; s?: number; color?: string; flip?: boolean; walkTo?: number; img?: string; talkImg?: string };
 // gambar objek (kucing, ikan, dst.) yang muncul saat katanya diucapkan; dibuat tools/visualize.py, waktu `at` (detik) dihitung tools/prepare.py
@@ -50,9 +50,8 @@ const Limb: React.FC<{ x1: number; y1: number; x2: number; y2: number; c: string
   </g>
 );
 
-// talk (0..1) = kerasnya suara pada frame ini → mulut ikut membuka (lip-sync sederhana)
-export const Stick: React.FC<{ pose: Pose; color: string; f: number; type?: string; talk?: number }> = ({ pose, color, f, type, talk }) => {
-  const rad = (d: number) => (d * Math.PI) / 180;
+// Keadaan tubuh & wajah sebuah pose pada frame f. Dipakai bersama oleh Stick dan Block: pose baru cukup ditambah di sini.
+const poseState = (pose: Pose, f: number, talk?: number) => {
   const talking = talk !== undefined && talk > 0.07;
   const breathe = Math.sin(f / 9) * 3 - (talking ? (talk as number) * 3 : 0);
   const blink = f % 90 < 4;
@@ -65,9 +64,38 @@ export const Stick: React.FC<{ pose: Pose; color: string; f: number; type?: stri
   else if (pose === "walk") { legs = Math.sin(f / 4) * 28; aL = Math.sin(f / 4) * 25; aR = -Math.sin(f / 4) * 25; }
   else if (pose === "tremble") { aL = 40; aR = -40; mouth = "o"; }
   else if (pose === "think") { aR = -120; mouth = "sad"; tilt = -6; }
+  else if (pose === "explain") { const g = (talk ?? 0) * 16 + Math.sin(f / 9) * 6; aL = 52 + g; aR = -52 - g; }
+  else if (pose === "thumbs") { aR = -128 + Math.sin(f / 6) * 5; }
+  else if (pose === "idle") { aL = 14 + Math.sin(f / 13) * 3; aR = -14 - Math.sin(f / 13 + 1.2) * 3; }
+  const nod = talking ? Math.sin(f / 3.2) * (talk as number) * 2.5 : 0; // kepala mengangguk tipis mengikuti suara
   if (talk !== undefined) mouth = talking ? "talk" : pose === "sad" || pose === "think" ? "sad" : "smile";
   const shake = pose === "tremble" ? Math.sin(f * 2.2) * 5 : 0;
   const bob = pose === "walk" ? Math.abs(Math.sin(f / 4)) * -10 : 0;
+  return { breathe, blink, aL, aR, legs, tilt, nod, mouth, shake, bob };
+};
+
+// Alis: bentuk mengikuti pose (kaget = naik, sedih = ujung dalam naik, think = satu alis naik) dan ikut terangkat tipis saat bicara.
+// Offset y negatif = naik; o = ujung luar, i = ujung dalam; l = kiri, r = kanan.
+const Brows: React.FC<{ pose: Pose; talk?: number; y: number }> = ({ pose, talk, y }) => {
+  let lo = 0, li = 0, ro = 0, ri = 0;
+  if (pose === "shock" || pose === "tremble") { lo = li = ro = ri = -9; }
+  else if (pose === "sad") { lo = 5; li = -7; ro = 5; ri = -7; }
+  else if (pose === "think") { lo = -8; li = -12; ro = 2; ri = 0; }
+  else if (pose === "cheer" || pose === "explain" || pose === "thumbs") { lo = li = ro = ri = -6; }
+  else if (pose === "point" || pose === "wave") { lo = li = ro = ri = -3; }
+  const up = -(talk ?? 0) * 5;
+  return (
+    <g stroke="#111" strokeWidth={5} strokeLinecap="round">
+      <line x1={-36} y1={y + lo + up} x2={-14} y2={y + li + up} />
+      <line x1={14} y1={y + ri + up} x2={36} y2={y + ro + up} />
+    </g>
+  );
+};
+
+// talk (0..1) = kerasnya suara pada frame ini → mulut ikut membuka (lip-sync sederhana)
+export const Stick: React.FC<{ pose: Pose; color: string; f: number; type?: string; talk?: number }> = ({ pose, color, f, type, talk }) => {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const { breathe, blink, aL, aR, legs, tilt, nod, mouth, shake, bob } = poseState(pose, f, talk);
   const arm = (side: number, a: number) => (
     <Limb x1={side * 50} y1={-310 + breathe} x2={side * 50 - Math.sin(rad(a)) * 130} y2={-310 + breathe + Math.cos(rad(a)) * 130} c="#f4f1ea" />
   );
@@ -79,7 +107,16 @@ export const Stick: React.FC<{ pose: Pose; color: string; f: number; type?: stri
       {type === "girl" && <polygon points="-60,-200 60,-200 88,-120 -88,-120" fill={color} stroke="#111" strokeWidth={6} />}
       {arm(-1, aL)}
       {arm(1, aR)}
-      <g transform={`rotate(${tilt} 0 -340)`}>
+      {pose === "thumbs" && (() => {
+        const ex = 50 - Math.sin(rad(aR)) * 130, ey = -310 + breathe + Math.cos(rad(aR)) * 130;
+        return (
+          <g fill="#f4f1ea" stroke="#111" strokeWidth={6}>
+            <rect x={ex - 7} y={ey - 52} width={14} height={34} rx={7} />
+            <circle cx={ex} cy={ey} r={24} />
+          </g>
+        );
+      })()}
+      <g transform={`rotate(${tilt + nod} 0 -340)`}>
         {type === "robot" ? (
           <g>
             <rect x={-68} y={-478 + breathe} width={136} height={136} rx={20} fill="#cfd8dc" stroke="#111" strokeWidth={6} />
@@ -96,6 +133,7 @@ export const Stick: React.FC<{ pose: Pose; color: string; f: number; type?: stri
         ) : (
           <g fill="#111"><circle cx={-24} cy={-420 + breathe} r={7} /><circle cx={24} cy={-420 + breathe} r={7} /></g>
         )}
+        <Brows pose={pose} talk={talk} y={-446 + breathe} />
         {mouth === "smile" && <path d={`M-24 ${-390 + breathe} Q0 ${-366 + breathe} 24 ${-390 + breathe}`} stroke="#111" strokeWidth={5} fill="none" />}
         {mouth === "sad" && <path d={`M-22 ${-372 + breathe} Q0 ${-394 + breathe} 22 ${-372 + breathe}`} stroke="#111" strokeWidth={5} fill="none" />}
         {mouth === "open" && <ellipse cx={0} cy={-382 + breathe} rx={15} ry={(10 + Math.abs(Math.sin(f / 3)) * 10)} fill="#111" />}
@@ -109,21 +147,7 @@ export const Stick: React.FC<{ pose: Pose; color: string; f: number; type?: stri
 
 // Karakter BLOK (gaya game, ORISINAL): kepala & badan kotak, lengan/kaki balok. Pose dan lip-sync sama dengan Stick.
 export const Block: React.FC<{ pose: Pose; color: string; f: number; type?: string; talk?: number }> = ({ pose, color, f, type, talk }) => {
-  const talking = talk !== undefined && talk > 0.07;
-  const breathe = Math.sin(f / 9) * 3 - (talking ? (talk as number) * 3 : 0);
-  const blink = f % 90 < 4;
-  let aL = 14, aR = -14, legs = 0, tilt = 0, mouth = "smile";
-  if (pose === "point") { aR = -95; mouth = "open"; }
-  else if (pose === "shock") { aL = 150; aR = -150; mouth = "o"; }
-  else if (pose === "sad") { aL = 8; aR = -8; tilt = 12; mouth = "sad"; }
-  else if (pose === "cheer") { aL = 160 + Math.sin(f / 4) * 12; aR = -160 - Math.sin(f / 4) * 12; mouth = "open"; }
-  else if (pose === "wave") { aR = -150 + Math.sin(f / 3) * 25; }
-  else if (pose === "walk") { legs = Math.sin(f / 4) * 28; aL = Math.sin(f / 4) * 25; aR = -Math.sin(f / 4) * 25; }
-  else if (pose === "tremble") { aL = 40; aR = -40; mouth = "o"; }
-  else if (pose === "think") { aR = -120; mouth = "sad"; tilt = -6; }
-  if (talk !== undefined) mouth = talking ? "talk" : pose === "sad" || pose === "think" ? "sad" : "smile";
-  const shake = pose === "tremble" ? Math.sin(f * 2.2) * 5 : 0;
-  const bob = pose === "walk" ? Math.abs(Math.sin(f / 4)) * -10 : 0;
+  const { breathe, blink, aL, aR, legs, tilt, nod, mouth, shake, bob } = poseState(pose, f, talk);
   const SK = type === "robot" ? "#cfd8dc" : "#f2c9a0", ln = "#111", b = breathe;
   const arm = (side: number, a: number) => (
     <g transform={`translate(${side * 76},${-322 + b}) rotate(${a})`}>
@@ -144,7 +168,17 @@ export const Block: React.FC<{ pose: Pose; color: string; f: number; type?: stri
       {type === "girl" && <rect x={-80} y={-215 + b} width={160} height={58} rx={10} fill={color} stroke={ln} strokeWidth={6} />}
       {arm(-1, aL)}
       {arm(1, aR)}
-      <g transform={`rotate(${tilt} 0 -345)`}>
+      {pose === "thumbs" && (() => {
+        const th = (aR * Math.PI) / 180;
+        const ex = 76 - Math.sin(th) * 134, ey = -322 + b + Math.cos(th) * 134;
+        return (
+          <g fill={SK} stroke={ln} strokeWidth={5}>
+            <rect x={ex - 8} y={ey - 54} width={16} height={36} rx={6} />
+            <rect x={ex - 22} y={ey - 22} width={44} height={44} rx={8} />
+          </g>
+        );
+      })()}
+      <g transform={`rotate(${tilt + nod} 0 -345)`}>
         <rect x={-64} y={-482 + b} width={128} height={128} rx={14} fill={SK} stroke={ln} strokeWidth={6} />
         {type === "girl" && <g fill="#3a1f0d" stroke={ln} strokeWidth={5}><rect x={-70} y={-494 + b} width={140} height={44} rx={10} /><rect x={-70} y={-494 + b} width={26} height={118} rx={8} /><rect x={44} y={-494 + b} width={26} height={118} rx={8} /></g>}
         {type === "boss" && <g fill="#222"><rect x={-84} y={-498 + b} width={168} height={24} rx={8} /><rect x={-52} y={-544 + b} width={104} height={50} rx={8} /></g>}
@@ -154,6 +188,7 @@ export const Block: React.FC<{ pose: Pose; color: string; f: number; type?: stri
         ) : (
           <g fill={type === "robot" ? "#7df9ff" : "#111"}><rect x={-36} y={-434 + b} width={18} height={20} /><rect x={18} y={-434 + b} width={18} height={20} /></g>
         )}
+        <Brows pose={pose} talk={talk} y={-446 + b} />
         {mouth === "smile" && <path d={`M-24 ${-390 + b} Q0 ${-366 + b} 24 ${-390 + b}`} stroke={ln} strokeWidth={5} fill="none" />}
         {mouth === "sad" && <path d={`M-22 ${-372 + b} Q0 ${-394 + b} 22 ${-372 + b}`} stroke={ln} strokeWidth={5} fill="none" />}
         {mouth === "open" && <rect x={-15} y={-396 + b} width={30} height={14 + Math.abs(Math.sin(f / 3)) * 10} rx={4} fill={ln} />}
@@ -175,6 +210,8 @@ const spriteMotion = (pose: Pose, f: number, talk: number) => {
   else if (pose === "think") rot -= 4;
   else if (pose === "shock") { sx *= 1.05; sy *= 1.05; dy = -8; }
   else if (pose === "wave" || pose === "point") rot += Math.sin(f / 8) * 2;
+  else if (pose === "explain") { rot += Math.sin(f / 8) * 2; sy += 0.012 * Math.sin(f / 6); }
+  else if (pose === "thumbs") { dy = -Math.abs(Math.sin(f / 6)) * 10; }
   return { dx, dy, rot, sx, sy };
 };
 const isImg = (b: string) => /[./]/.test(b);   // bg berupa file gambar (mis. "img/bg1.png") bukan nama latar vektor
@@ -191,7 +228,7 @@ const SKY: Record<string, [string, string]> = {
 };
 const GROUND: Record<string, string> = { dawn: "#2d6a4f", day: "#6a994e", room: "#5c4033", office: "#6c757d" };
 
-const Bg: React.FC<{ type: string; f: number; p: number }> = ({ type, f, p }) => {
+export const Bg: React.FC<{ type: string; f: number; p: number }> = ({ type, f, p }) => {
   const [c1, c2] = SKY[type] || SKY.night;
   const pan = -p * 60;
   return (
@@ -231,8 +268,10 @@ const Bg: React.FC<{ type: string; f: number; p: number }> = ({ type, f, p }) =>
   );
 };
 
-const Prop: React.FC<{ kind: string; f: number; hx: number; accent: string }> = ({ kind, f, hx, accent }) => {
+// lf (opsional) = frame lokal sejak adegan mulai; properti beranimasi sekali-jalan (roket, grafik, gembok) memakainya. Bila tidak diisi, memakai f.
+export const Prop: React.FC<{ kind: string; f: number; hx: number; accent: string; lf?: number }> = ({ kind, f, hx, accent, lf }) => {
   const pulse = 1 + Math.sin(f / 6) * 0.08;
+  const lt = lf ?? f;
   return (
     <svg viewBox="0 0 1080 1920" width={1080} height={1920} style={{ position: "absolute" }}>
       {kind === "think" && (
@@ -307,6 +346,55 @@ const Prop: React.FC<{ kind: string; f: number; hx: number; accent: string }> = 
           {i === 3 && <text x={780} y={1460 - i * 34 + 14} fontSize={36} fontWeight={800} textAnchor="middle" fill="#8d6e63">Rp</text>}
         </g>
       ))}
+      {kind === "rocket" && (() => {
+        const k = Math.min(1, Math.max(0, lt / 20));
+        const ent = 1 - Math.pow(1 - k, 3);
+        const flame = 0.75 + Math.abs(Math.sin(lt / 2.5)) * 0.5;
+        return (
+          <g transform={`translate(800,${1330 + (1 - ent) * 300 + Math.sin(lt / 9) * 14}) scale(1.3)`}>
+            <polygon points={`-26,60 26,60 0,${60 + 110 * flame}`} fill="#ff9f1c" stroke="#111" strokeWidth={5} />
+            <polygon points={`-12,60 12,60 0,${60 + 60 * flame}`} fill="#ffd166" />
+            <polygon points="-48,0 -48,66 -96,94 -96,40" fill={accent} stroke="#111" strokeWidth={6} />
+            <polygon points="48,0 48,66 96,94 96,40" fill={accent} stroke="#111" strokeWidth={6} />
+            <path d="M0 -170 Q64 -90 52 64 L-52 64 Q-64 -90 0 -170 Z" fill="#f1f3f5" stroke="#111" strokeWidth={6} />
+            <circle cx={0} cy={-60} r={24} fill="#4cc9f0" stroke="#111" strokeWidth={6} />
+          </g>
+        );
+      })()}
+      {kind === "chart" && (() => {
+        const T = [70, 120, 105, 175, 235];
+        const grow = (i: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, (lt - i * 5) / 22)), 3);
+        const br = 1 + Math.sin(lt / 10) * 0.03;
+        const ao = Math.min(1, Math.max(0, (lt - 32) / 10));
+        return (
+          <g>
+            <rect x={610} y={1180} width={380} height={300} rx={22} fill="#1d2b53" stroke="#777" strokeWidth={6} />
+            <line x1={630} y1={1452} x2={970} y2={1452} stroke="#adb5bd" strokeWidth={4} />
+            {T.map((h, i) => (
+              <rect key={i} x={640 + i * 66} y={1450 - h * grow(i) * br} width={46} height={h * grow(i) * br} rx={8} fill={i === T.length - 1 ? accent : "#4cc9f0"} />
+            ))}
+            <g opacity={ao}>
+              <polyline points="650,1380 740,1340 800,1360 910,1250" fill="none" stroke="#fff" strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" />
+              <polygon points="910,1250 900,1283 877,1260" fill="#fff" />
+            </g>
+          </g>
+        );
+      })()}
+      {kind === "lock" && (() => {
+        const k = Math.min(1, Math.max(0, (lt - 4) / 16));
+        const lift = (1 - (1 - Math.pow(1 - k, 3))) * 34;
+        const sy = -140 - lift;
+        return (
+          <g transform="translate(800,1400)">
+            <circle cx={0} cy={-20} r={150 * pulse} fill={accent} opacity={0.18} />
+            <path d={`M-62 -90 V${sy} A62 62 0 0 1 62 ${sy} V-90`} fill="none" stroke="#111" strokeWidth={34} strokeLinecap="round" />
+            <path d={`M-62 -90 V${sy} A62 62 0 0 1 62 ${sy} V-90`} fill="none" stroke="#adb5bd" strokeWidth={22} strokeLinecap="round" />
+            <rect x={-100} y={-100} width={200} height={170} rx={24} fill="#ffd166" stroke="#111" strokeWidth={6} />
+            <circle cx={0} cy={-26} r={20} fill="#111" />
+            <rect x={-8} y={-16} width={16} height={46} rx={6} fill="#111" />
+          </g>
+        );
+      })()}
       {kind === "confetti" &&
         Array.from({ length: 40 }, (_, i) => (
           <rect key={i} x={(i * 79) % 1080} y={((f * (6 + (i % 5)) + i * 90) % 1900) - 50} width={14} height={22} fill={["#ffd166", "#ff6b6b", "#4cc9f0", "#06d6a0"][i % 4]} transform={`rotate(${f * 6 + i * 20} ${(i * 79) % 1080} 0)`} />
