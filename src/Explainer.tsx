@@ -1270,7 +1270,7 @@ const HoloRing: React.FC<{ x: number; y: number; f: number; accent: string }> = 
 
 // ================= TEMA KLASIK (stickman + latar kota/ruang, caption di atas) =================
 const CLASSIC_BGS = ["dawn", "dusk", "room", "stage", "night", "day", "office"];
-const CLASSIC_PROPS = ["bulb", "confetti", "crowd", "fork", "laptop", "money", "orb", "phone", "shadow", "think", "trophy"];
+const CLASSIC_PROPS = ["bulb", "confetti", "crowd", "fork", "laptop", "money", "orb", "phone", "shadow", "think", "trophy", "rocket", "chart", "lock"];
 const classicVars = (accent: string) => ({
   "--card-bg": "rgba(14,18,38,.88)",
   "--card-line": accent,
@@ -1402,7 +1402,7 @@ export const Explainer: React.FC<StoryProps> = ({ name, data: d }) => {
             </div>
           )}
           {classic && s.prop && CLASSIC_PROPS.includes(s.prop) && typeof Prop !== "undefined" ? (
-            <Prop kind={s.prop} f={frame} hx={s.mascot === "left" ? 300 : s.mascot === "right" ? 780 : 540} accent={accent} />
+            <Prop kind={s.prop} f={frame} lf={Math.max(0, frame - Math.round(s.start * fps))} hx={s.mascot === "left" ? 300 : s.mascot === "right" ? 780 : 540} accent={accent} />
           ) : null}
           <div style={{ position: "absolute", left: 60, right: 60, top: neon ? 170 : tut ? (hm ? 500 : 470) : classic ? (hm ? 420 : 360) : hud ? (hm ? 480 : 500) : (hm ? 500 : 520) + dy, bottom: neon ? 700 : tut ? (hm ? 700 : 540) : classic ? (hm ? 840 : 260) : hud ? (hm ? 790 : 440) : (hm ? 520 : 200), display: "flex", flexDirection: "column", justifyContent: neon ? "flex-start" : "center", gap: neon ? 18 : 28 }}>
             {(s.stage || []).map((b, bi) => <StageItem key={bi} b={b} i={bi} />)}
@@ -1492,4 +1492,3 @@ export const Explainer: React.FC<StoryProps> = ({ name, data: d }) => {
     </AbsoluteFill>
   );
 };
-
